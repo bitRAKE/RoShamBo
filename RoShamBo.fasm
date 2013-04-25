@@ -1,0 +1,579 @@
+; RoShamBo - Just a simple game
+;
+; REFERENCES:
+;
+; http://wikipedia.org/wiki/Rock-paper-scissors
+; http://www.rpscontest.com/
+;-------------------------------------------------------------------------------
+
+; Add your computer AI to this list by macro name:
+AGENTS equ Agent_Test,Agent_RndPMC
+
+include 'Agent_Test.finc'
+include 'Agent_RndPMC.finc'
+
+PROG_VERSION equ '2013.04.25.0'
+
+HINSTANCE fix $10000 ; tiny tools use 32-bit addresses
+format PE64 GUI 6.0 at HINSTANCE
+include '%INCLUDE%\win64wxp.inc'
+
+section '.DATA' data readable writeable
+
+CS_DROPSHADOW = 0x00020000
+class WNDCLASSEX sizeof.WNDCLASSEX,CS_DROPSHADOW,WndProc,0,0,HINSTANCE,0,0,COLOR_APPWORKSPACE,0,WINDOW.class,0
+
+WINDOW:
+  .class TCHAR "dank.orb:"
+  .title TCHAR "RoShamBo",0
+  .message TCHAR "- %u/%u/%u",0 ; stats
+  align 16
+  .STYLEX = WS_EX_TOOLWINDOW or WS_EX_TOPMOST or WS_EX_CONTROLPARENT
+  .STYLE = WS_VISIBLE or WS_SYSMENU
+  ; client size needed, (x,y) = (0,0) to put at cursor location
+  .x = 0
+  .y = 0
+  .w = 2 * BUTTON.x + 3 * (BUTTON.w + BUTTON.dx) - BUTTON.dx
+  .h = 2 * BUTTON.y + 1 * (BUTTON.h + BUTTON.dy) - BUTTON.dy
+  .rect RECT .x,.y,.w+16,.h+34
+
+
+BUTTON:
+  .class TCHAR "BUTTON" ;,0
+  .text TCHAR 0
+  .STYLE = BS_PUSHBUTTON or BS_BITMAP or WS_CHILD or WS_VISIBLE or WS_TABSTOP
+  .STYLEX = 0
+  .dx = 5
+  .dy = 5
+  .x = 7
+  .y = 7
+  .w = 64
+  .h = 64
+
+
+;-------------------------------------------------------------------------------
+struc BUTTON_IMAGELIST A,B,C {
+  .himl   dq A
+  .margin RECT B
+  .uAlign dd C
+}
+BUTTON_IMAGELIST_ALIGN_CENTER = 4
+
+b_IL BUTTON_IMAGELIST 0,<0,0,0,0>,BUTTON_IMAGELIST_ALIGN_CENTER
+
+BCM_SETIMAGELIST = $1602
+
+; PUSHBUTTONSTATES : Image order in ImageList
+PBS_NORMAL    = 1 ;
+PBS_HOT       = 2 ; mouse hover
+PBS_PRESSED   = 3 ; button down
+PBS_DISABLED  = 4 ;
+PBS_DEFAULTED = 5 ; BS_DEFPUSHBUTTON style
+PBS_STYLUSHOT = 6 ; defaulted state bugged under win7 without this image, too
+; Win7 fades between images on state change
+; Win7 ping-pong between image 5 and 6 on default
+;-------------------------------------------------------------------------------
+
+GetLastError.Title du "GetLastError:",0
+
+    align 64
+msg MSG
+
+hWnd	 rq 1
+hMenu	 rq 1
+hRock	 rq 1
+hPaper	 rq 1
+hScissor rq 1
+hHk	 rq 1
+
+
+Agent.Active dd 0
+FLAGS	 rw 1
+  .GAMEOVER = 0
+USER	 rb 1
+COMPUTER rb 1
+RESULT	 dd 0 ; button config
+.Ties	 rd 1 ; counts
+.Losses  rd 1 ;
+.Wins	 rd 1 ;
+
+Verbose dq .T,.L,.W
+.T TCHAR "We Think Alike",0
+.L TCHAR "So, Sorry",0
+.W TCHAR "Lucky Guess",0
+
+
+
+match L,AGENTS { irp T,L \{
+  T CONST
+\} }
+match L,AGENTS { irp T,L \{
+  T DATA
+\} }
+match L,AGENTS { irp T,L \{
+  _RPS_NAME_\#T:
+  T NAME
+  du 0
+\} }
+
+
+    align 64
+_RPS_TABLE:
+  match L,AGENTS { irp T,L \{
+    dq _RPS_\#T
+  \} }
+
+
+section '.CODE' code executable
+
+match L,AGENTS { irp T,L \{
+  _RPS_\#T:
+  T CODE
+  retn
+\} }
+
+Welcome: ENTRY $
+    push rax ; align stack
+
+    invoke GetCursorPos,addr WINDOW.rect
+    invoke AdjustWindowRectEx,addr WINDOW.rect,WINDOW.STYLE,FALSE,WINDOW.STYLEX
+
+    invoke RegisterClassEx,class
+    test ax,ax ; ATOM size WORD
+    jz It_went_horribly_wrong
+
+    invoke CreateWindowEx,WINDOW.STYLEX,rax,WINDOW.title,WINDOW.STYLE,\
+	[WINDOW.rect.left],[WINDOW.rect.top],[WINDOW.rect.right],[WINDOW.rect.bottom],\
+	HWND_DESKTOP,0,HINSTANCE,0
+    test rax,rax
+    jz It_went_horribly_wrong
+
+    mov [WINDOW.message-2]," " ; reuse string
+
+    mov rbx,rax     ; hWnd
+    lea rsi,[msg]   ; MSG
+    xor edi,edi     ; 0
+
+    ; let agents initialize themselves
+    match L,AGENTS { irp T,L \{
+      T INIT
+    \} }
+
+    jmp .get
+.mloop:
+; this doesn't work right
+;    invoke IsDialogMessage,ebx,rsi ; allow keyboard navigation like dialog window
+;    test eax,eax
+;    jnz .get
+    invoke TranslateMessage,rsi
+    invoke DispatchMessage,rsi
+.get:
+    invoke GetMessage,rsi,rdi,rdi,rdi
+    test eax,eax ; -1,0,1
+    jg .mloop
+
+    ; final clean-up
+
+    jnz It_went_horribly_wrong
+xit:
+    invoke ExitProcess,rax
+    int3
+
+It_went_horribly_wrong:
+    fastcall MessageBox.LastError,HWND_DESKTOP
+    jmp xit
+
+
+;-------------------------------------------------------------------------------
+; hWnd of parent window in RCX
+; return error code put in RAX
+MessageBox.LastError:
+    mov rbp,rsp
+    and rsp,-16 ; force stack align
+    xor edx,edx
+    push rcx rdx rdx rdx rdx rsp rdx rdx rdx rdx
+    virtual at rsp
+		  rq 4
+	.lpBuffer rq 1 ; three
+	.nSize	  rq 1 ;   params for
+	.va_list  rq 1 ;     FormatMessage
+	.buf	  rq 1
+	.err	  rq 1
+	.hWnd	  rq 1
+    end virtual
+
+    call [GetLastError]
+    mov [.err],rax
+
+    mov ecx,FORMAT_MESSAGE_ALLOCATE_BUFFER or FORMAT_MESSAGE_FROM_SYSTEM
+    xor edx,edx
+    xchg r8d,eax
+    mov r9,rdx ; LANG_NEUTRAL
+    add [.lpBuffer],16 ; lpBuffer,0,0 already on stack
+    call [FormatMessageW]
+
+    mov rcx,[.hWnd]
+    mov rdx,[.buf]
+    lea r8,[GetLastError.Title]
+    mov r9d,MB_ICONERROR + MB_OK
+    call MessageBox.CBT
+
+    mov rcx,[.buf]
+    call [LocalFree]
+    mov rax,[.err]
+    mov rsp,rbp
+    retn
+
+
+    align 64
+MessageBox.CBT: ; hWnd,lpText,lpCaption,uType
+    jrcxz @F ; if HWND_DESKTOP - let windows sort it out
+    push r9 r8 rdx rcx rcx rcx rcx rcx rcx
+    call [GetCurrentThreadId]
+    mov ecx,5 ; WH_CBT
+    lea edx,[CBTProc]
+    xor r8,r8
+    mov r9,rax
+    call [SetWindowsHookEx]
+    mov [hHk],rax ; doesn't matter if it fails, we need to continue
+    pop rax rax rax rax rax rcx rdx r8 r9
+@@: jmp [MessageBox]
+
+
+CBTProc: ; nCode,hChild,lpCBTact
+    enter .frame,0
+    cmp ecx,HCBT_ACTIVATE
+    jz .HCBT_ACTIVATE
+    mov r9,r8
+    mov r8,rdx
+    mov rdx,rcx
+    mov rcx,[hHk]
+    call [CallNextHookEx]
+    xor eax,eax
+    leave
+    retn
+; any error results in unhooking and just presenting without centering
+.HCBT_ACTIVATE:
+    virtual at rbp-.frame
+		rq 4
+	.4	rq 1
+	.5	rq 1
+	.hChild equ .5
+	.rChild  RECT ?,?,?,?
+	.rParent RECT ?,?,?,?
+	.frame = NOT 15 AND ($-$$+15)
+    end virtual
+    mov [.hChild],rdx
+
+    mov rcx,rdx
+    lea rdx,[.rChild]
+    call [GetWindowRect]
+    test eax,eax
+    jz @F
+
+    mov rcx,[.hChild]
+    call [GetParent]
+    xchg rcx,rax
+    jrcxz @F
+    lea rdx,[.rParent]
+    call [GetWindowRect]
+    test eax,eax
+    jz @F
+    mov r9d,[.rChild.right]
+    mov eax,[.rChild.bottom]
+    mov edx,[.rParent.right]
+    mov r8d,[.rParent.bottom]
+    sub r9d,[.rChild.left] ; width
+    sub eax,[.rChild.top] ; height
+    add edx,[.rParent.left]
+    add r8d,[.rParent.top]
+    sub edx,r9d
+    sub r8d,eax
+    sar edx,1 ; start.x
+    sar r8d,1 ; start.y
+
+    mov rcx,[.hChild]
+    mov [.4],rax
+    and [.5],0 ; FALSE
+    call [MoveWindow]
+
+@@: mov rcx,[hHk]
+    call [UnhookWindowsHookEx]
+    xor eax,eax
+    leave
+    retn
+
+
+    align 64
+;-------------------------------------------------------------------------------
+WndProc.WM_SYSCOMMAND:
+    mov eax,$FFF0
+    and eax,r8d ; clear internal flags, high word
+    cmp eax,IDM_ABOUTBOX
+    jz WM_SYSCOMMAND.IDM_ABOUTBOX
+    cmp eax,(__AGENTS+1)*16 + IDM_ABOUTBOX
+    jc WM_SYSCOMMAND.Agents
+    jmp WndProc.DEFAULT
+
+WndProc.WM_COMMAND:
+    cmp r8d,IDB_ROCK	+(BN_CLICKED shl 16)
+    jz WM_COMMAND.IDB_ROCK
+    cmp r8d,IDB_PAPER	+(BN_CLICKED shl 16)
+    jz WM_COMMAND.IDB_PAPER
+    cmp r8d,IDB_SCISSOR +(BN_CLICKED shl 16)
+    jz WM_COMMAND.IDB_SCISSOR
+    jmp WndProc.DEFAULT
+
+WndProc: ; hWnd,wMsg,wParam,lParam
+    cmp edx,WM_COMMAND
+    jz .WM_COMMAND
+    cmp edx,WM_SYSCOMMAND
+    jz .WM_SYSCOMMAND
+    cmp edx,WM_DESTROY
+    jz .WM_DESTROY
+    cmp edx,WM_CREATE
+    jz .WM_CREATE
+.DEFAULT:
+    jmp [DefWindowProc]
+
+.WM_DESTROY:
+    push 0 ; align stack
+    invoke PostQuitMessage,0
+    pop rax
+    ret
+
+.WM_CREATE:
+    push 0
+    mov [hWnd],rcx
+
+    invoke GetSystemMenu,[hWnd],FALSE
+    mov [hMenu],rax
+    test rax,rax
+    jz .fail
+
+    rept 3 i:0{
+	invoke CreateWindowEx,BUTTON.STYLEX,BUTTON.class,NULL,BUTTON.STYLE,\
+	       BUTTON.x + i * (BUTTON.w + BUTTON.dx),\
+	       BUTTON.y,\
+	       BUTTON.w,\
+	       BUTTON.h,\
+	       [hWnd],IDB_ROCK+i,HINSTANCE,NULL
+	test rax,rax
+	jz .fail
+	mov [hRock+8*i],rax
+
+;invoke ImageList_Create,64,64,ILC_COLOR32|ILC_ORIGINALSIZE|ILC_HIGHQUALITYSCALE,6,0
+
+	invoke ImageList_LoadImage,HINSTANCE,IDB_ROCK+i,64,0,CLR_NONE,IMAGE_BITMAP,LR_CREATEDIBSECTION
+	mov [b_IL.himl],rax
+	invoke SendMessage,[hRock+8*i],BCM_SETIMAGELIST,0, addr b_IL
+    }
+
+    invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_SEPARATOR,0,0
+    invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_SEPARATOR,0,0
+    invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_STRING,IDM_ABOUTBOX,"About..."
+    invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_SEPARATOR,0,0
+    j=0 ; Agent Menu ->
+    match L,AGENTS { irp T,L \{
+      j=j+1
+      if j=1
+	invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_STRING or MF_CHECKED,\
+	    IDM_ABOUTBOX+16*j, _RPS_NAME_\#T
+      else
+	invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_STRING,\
+	    IDM_ABOUTBOX+16*j, _RPS_NAME_\#T
+      end if
+    \} }
+    __AGENTS = j
+
+    pop rax
+    retn
+
+.fail:
+    pop rax
+    sub eax,1
+    retn
+
+;-------------------------------------------------------------------------------
+WM_SYSCOMMAND.IDM_ABOUTBOX:
+    push 0
+    fastcall MessageBox.CBT,rcx,\
+	<"Rock | Paper | Scissors",10,\
+	9,9,"by bitRAKE",10,10,\
+	"Choose Wisely &",10,\
+	9,"Become a Master!">,\
+	"dank.orb Presents:",MB_OK
+    pop rax
+    retn
+WM_SYSCOMMAND.Agents:
+    push rax
+    invoke CheckMenuItem,[hMenu],rax,MF_BYCOMMAND or MF_CHECKED
+    pop rax
+    push 0
+    ; convert menu ID to index
+    sub eax,IDM_ABOUTBOX+16
+    shr eax,4
+    mov edx,[Agent.Active] ; old
+    mov [Agent.Active],eax ; new
+    ; convert index to menu ID
+    shl edx,4
+    add edx,IDM_ABOUTBOX+16
+    invoke CheckMenuItem,[hMenu],rdx,MF_BYCOMMAND or MF_UNCHECKED
+    pop rax
+    retn
+
+;-------------------------------------------------------------------------------
+WM_COMMAND.IDB_ROCK:
+WM_COMMAND.IDB_PAPER:
+WM_COMMAND.IDB_SCISSOR:
+    push 0
+    btc [FLAGS],FLAGS.GAMEOVER
+    jc .reset
+
+    sub r8,IDB_ROCK ; selection [0,2]
+    mov [USER],r8b
+
+    ; have computer move
+    mov eax,[Agent.Active]
+    call qword [_RPS_TABLE+rax*8]
+    mov [COMPUTER],al
+
+; player--\  R P S <--- computer
+;          R x 0 1     0=loss
+;          P 1 x 0     1=win
+;          S 0 1 x     x=tie
+    imul ecx,eax,7*3
+    mov rax,1010001'1000100'0001001'1000100'0111000'0100010'0001001'0100010'0010110b
+    shr rax,cl
+    movzx ecx,[USER]
+    imul ecx,ecx,7
+    shr rax,cl
+    mov [RESULT],eax
+
+    and eax,11b
+    invoke EnableWindow,[hRock+rax*8],FALSE
+    mov eax,[RESULT]
+    shr eax,2
+    and eax,11b
+    invoke EnableWindow,[hRock+rax*8],FALSE
+    mov eax,[RESULT]
+    shr eax,5
+    jc .tie
+    and eax,11b
+    invoke SendMessage,[hRock+rax*8],BM_SETSTYLE,BUTTON.STYLE+BS_DEFPUSHBUTTON,TRUE
+.tie:
+    mov eax,[RESULT]
+    shr eax,5
+    sbb ecx,ecx ; tie?
+    and eax,11b
+    cmp al,[USER]
+    setz al
+    or al,cl
+    movsx rax,al ; -1,0,1 = Tie,Loss,Win
+    add [RESULT.Ties+rax*4+4],1
+    invoke SendMessage,[hWnd],WM_SETTEXT,0,[Verbose+rax*8+8]
+    pop rax
+    retn
+
+.reset:
+    mov eax,[RESULT]
+    and eax,11b
+    invoke EnableWindow,[hRock+rax*8],TRUE
+    mov eax,[RESULT]
+    shr eax,2
+    and eax,11b
+    invoke EnableWindow,[hRock+rax*8],TRUE
+    mov eax,[RESULT]
+    shr eax,5
+    jc .tie2
+    and eax,11b
+    invoke SendMessage,[hRock+rax*8],BM_SETSTYLE,BUTTON.STYLE,TRUE
+.tie2:
+    ; display stats in title
+    invoke wsprintf,addr ___wsprintf,addr WINDOW.title,\
+	[RESULT.Wins],[RESULT.Ties],[RESULT.Losses]
+    invoke SendMessage,[hWnd],WM_SETTEXT,0, addr ___wsprintf
+    pop rax
+    retn
+
+entry equ .!.. ; fudge to get the API stuff without code generation
+.end $$
+
+
+    align 64
+___wsprintf rw 1024+2
+
+    align 64
+match L,AGENTS { irp T,L \{
+  T BSS
+\} }
+
+
+section '.rsrc' resource data readable
+
+    IDB_ROCK	    = 3
+    IDB_PAPER	    = IDB_ROCK+1
+    IDB_SCISSOR     = IDB_ROCK+2
+
+    ; SysMenu IDs
+    IDM_ABOUTBOX = 0x0010
+
+    directory	RT_BITMAP,   imagebmps,\
+		RT_VERSION,  versions,\
+		RT_MANIFEST, manifest
+
+    resource	imagebmps,\
+	IDB_ROCK,    LANG_NEUTRAL, rockbmp,\
+	IDB_PAPER,   LANG_NEUTRAL, paperbmp,\
+	IDB_SCISSOR, LANG_NEUTRAL, scissorbmp
+
+    resource	manifest, 1, LANG_NEUTRAL, man
+    resource	versions, 1, LANG_NEUTRAL, version
+
+    bitmap	rockbmp, '.\rsrc\D_Rock.bmp'
+    bitmap	paperbmp, '.\rsrc\D_Paper.bmp'
+    bitmap	scissorbmp, '.\rsrc\D_Scissor.bmp'
+
+    versioninfo version, VOS__WINDOWS32, VFT_APP, VFT2_UNKNOWN, LANG_ENGLISH + SUBLANG_DEFAULT, 1200,\
+	"CompanyName",	   "dank.orb™ Production",\
+	"LegalCopyright",  "©2013 Rickey Bowers Jr",\
+	"LegalTrademarks", "CC BY-SA 3.0",\
+	"ProductName",	   "The Best Brand",\
+	"ProductVersion",  PROG_VERSION,\
+	"Comments",	   "Attribution-ShareAlike 3.0",\
+	"Developer",	   "bitRAKE™",\
+	"InternalName",    "RoShamBo",\
+	"PrivateBuild",    "Just those who have it.",\
+	"SpecialBuild",    "Because I could.",\
+	"FileDescription", "Application implementing something.",\
+	"FileVersion",	   PROG_VERSION,\
+	"OriginalFilename","do-run-run.exe",\
+	"Build",	   "April 2013",\
+	"Support",	   "Fix-it-yourself.com",\
+	"Users",	   "Unlimited"
+
+    resdata man
+	db '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+	db '<assembly'
+	db   ' xmlns="urn:schemas-microsoft-com:asm.v1"'
+	db   ' manifestVersion="1.0">'
+	db   '<assemblyIdentity'
+	db     ' version="', PROG_VERSION, '"'
+	db     ' processorArchitecture="amd64"'
+	db     ' name="dank.orb::RoShamBo"'
+	db     ' type="win32"/>'
+	db   '<description>Rock, paper, scissors game.</description>'
+	db   '<dependency>'
+	db     '<dependentAssembly>'
+	db	 '<assemblyIdentity'
+	db	   ' type="win32"'
+	db	   ' name="Microsoft.Windows.Common-Controls"'
+	db	   ' version="6.0.0.0"'
+	db	   ' processorArchitecture="amd64"'
+	db	   ' publicKeyToken="6595b64144ccf1df"'
+	db	   ' language="*">'
+	db	 '</assemblyIdentity>'
+	db     '</dependentAssembly>'
+	db   '</dependency>'
+	db '</assembly>'
+    endres

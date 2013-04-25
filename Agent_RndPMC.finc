@@ -1,0 +1,55 @@
+; the famous Park-Miller-Carta pseudo-random generator +1
+
+macro Agent_RndPMC stage {
+  match =NAME,stage \{ du "Random" \}
+
+  match =CONST,stage \{
+    ..7FFFFFFE dd $7FFFFFFE
+  \}
+
+  match =DATA,stage \{
+    ..PM_seed	dd 1	     ; set by INIT, avoid zero seed
+    ..PM_data	dd 485705411 ; some random prime < $20000000
+  \}
+
+  match =BSS,stage \{ \}
+
+  match =INIT,stage \{
+    rdtsc
+    mul [..7FFFFFFE]
+    or [..PM_seed],edx
+  \}
+
+  match =CODE,stage \{
+    \local ..clamp,..good,..pm_sfuerst
+
+	imul eax,[..PM_data],3
+    ..clamp:
+	mov [..PM_data],eax
+	and [..PM_data],$1FFFFFFF
+	jnz ..good
+
+	mov eax,[..PM_seed]
+	call ..pm_sfuerst
+	mov [..PM_seed],eax
+	jmp ..clamp
+
+    ; Park-Miller-Carta Random LCG
+    ; (cleaver improvement from Steven Fuerst)
+    ; in/out EAX, range 1 to 7FFFFFFEh inclusive
+    ..pm_sfuerst:
+	mov ecx,16807
+	mul ecx
+	add eax,eax
+	adc edx,edx
+	add edx,edx
+	add eax,edx
+	sbb edx,edx
+	shr eax,1
+	sub eax,edx
+	retn
+
+    ..good:
+	shr eax,32-3
+  \}
+}

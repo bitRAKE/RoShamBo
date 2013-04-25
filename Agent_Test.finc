@@ -1,0 +1,29 @@
+; Computer agent framework is encapsulated within a single macro. Parts are
+; subdivided into the follow sections:
+;
+;    NAME - Visual appearance of agent in application. Macro name is used at
+;           assemble time and they need not be the same.
+;
+;   CONST -
+;    DATA -
+;     BSS -
+;
+;    INIT - (boot-strap your AI)
+;    CODE - Execution for agent begins at the start and needs to exit at the
+;           bottom. Application handles prolog/epilog - no label required.
+;
+; Add the macro name to the list of agents and re-compile.
+; Only include the parts needed.
+
+macro Agent_Test stage { common
+  match =NAME,stage \{ du "Test" \}
+
+  match =DATA,stage \{
+    ..last dd 10010100010100101001010010001010b
+  \}
+  match =CODE,stage \{
+    mov eax,[..last]	;
+    rol [..last],1	; 32 move memory, lol
+    and eax,11b 	; = 0, 1, or 2 = Rock, Paper, Scissors
+  \}
+}
