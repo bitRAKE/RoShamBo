@@ -4,7 +4,7 @@
     + http://www.youtube.com/watch?v=rM9k_DQYnfU
 
 
-  How to Play:
+# How to Play
     - choose wisely
     - observe result
 	- read window title
@@ -12,12 +12,12 @@
     - click winner to try again
 
 
-  Room to Grow:
+# Room to Grow
     - add player AI
     - store user history
 
 
-  Special Thanks:
+# Special Thanks
     + Keith S Small, for the wonderful art
       www.become-art.com
 
