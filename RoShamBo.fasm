@@ -386,6 +386,8 @@ WndProc: ; hWnd,wMsg,wParam,lParam
     \} }
     __AGENTS = j
 
+    invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_STRING or MF_DISABLED,IDM_ABOUTBOX+16*(j+1),"AGENTS"
+
     pop rax
     retn
 
