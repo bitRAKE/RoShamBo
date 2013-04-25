@@ -28,7 +28,7 @@
       www.getpaint.net
 
     + Programmers across the web, I read your blogs
-      and code and papers and postcast and videos.
+      and code and papers and podcast and videos.
 
 ___
 This work is licensed under a Creative Commons

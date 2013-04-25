@@ -16,7 +16,7 @@ PROG_VERSION equ '2013.04.25.0'
 
 HINSTANCE fix $10000 ; tiny tools use 32-bit addresses
 format PE64 GUI 6.0 at HINSTANCE
-include '%INCLUDE%\win64wxp.inc'
+include 'win64wxp.inc'
 
 section '.DATA' data readable writeable
 
