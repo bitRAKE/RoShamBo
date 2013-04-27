@@ -7,14 +7,16 @@
 ;-------------------------------------------------------------------------------
 
 ; Add your computer AI to this list by macro name:
-AGENTS equ Agent_Test,Agent_RndPMC
+AGENTS fix Agent_Test,Agent_RndPMC
 
 include 'Agent_Test.finc'
 include 'Agent_RndPMC.finc'
 
 PROG_VERSION equ '2013.04.25.0'
 
+; http://blogs.msdn.com/b/oldnewthing/archive/2004/10/25/247180.aspx
 HINSTANCE fix $10000 ; tiny tools use 32-bit addresses
+; RVA 0 should be hInstance of DLL or EXE, whereas GetModuleHandle is for EXE
 format PE64 GUI 6.0 at HINSTANCE
 include 'win64wxp.inc'
 
@@ -104,33 +106,29 @@ Verbose dq .T,.L,.W
 
 
 
-match L,AGENTS { irp T,L \{
-  T CONST
-\} }
-match L,AGENTS { irp T,L \{
-  T DATA
-\} }
-match L,AGENTS { irp T,L \{
-  _RPS_NAME_\#T:
+irp T,AGENTS { T CONST }
+irp T,AGENTS { T DATA }
+irp T,AGENTS {
+  _RPS_NAME_#T:
   T NAME
   du 0
-\} }
-
-
+}
     align 64
 _RPS_TABLE:
-  match L,AGENTS { irp T,L \{
-    dq _RPS_\#T
-  \} }
+  irp T,AGENTS { dq _RPS_#T }
 
 
 section '.CODE' code executable
 
-match L,AGENTS { irp T,L \{
-  _RPS_\#T:
+irp T,AGENTS {
+  _RPS_#T:
   T CODE
   retn
-\} }
+}
+
+
+PTR equ dq
+PTR? equ rq
 
 Welcome: ENTRY $
     push rax ; align stack
@@ -155,9 +153,9 @@ Welcome: ENTRY $
     xor edi,edi     ; 0
 
     ; let agents initialize themselves
-    match L,AGENTS { irp T,L \{
+    irp T,AGENTS {
       T INIT
-    \} }
+    }
 
     jmp .get
 .mloop:
@@ -362,8 +360,6 @@ WndProc: ; hWnd,wMsg,wParam,lParam
 	jz .fail
 	mov [hRock+8*i],rax
 
-;invoke ImageList_Create,64,64,ILC_COLOR32|ILC_ORIGINALSIZE|ILC_HIGHQUALITYSCALE,6,0
-
 	invoke ImageList_LoadImage,HINSTANCE,IDB_ROCK+i,64,0,CLR_NONE,IMAGE_BITMAP,LR_CREATEDIBSECTION
 	mov [b_IL.himl],rax
 	invoke SendMessage,[hRock+8*i],BCM_SETIMAGELIST,0, addr b_IL
@@ -374,16 +370,16 @@ WndProc: ; hWnd,wMsg,wParam,lParam
     invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_STRING,IDM_ABOUTBOX,"About..."
     invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_SEPARATOR,0,0
     j=0 ; Agent Menu ->
-    match L,AGENTS { irp T,L \{
+    irp T,AGENTS {
       j=j+1
       if j=1
 	invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_STRING or MF_CHECKED,\
-	    IDM_ABOUTBOX+16*j, _RPS_NAME_\#T
+	    IDM_ABOUTBOX+16*j, _RPS_NAME_#T
       else
 	invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_STRING,\
-	    IDM_ABOUTBOX+16*j, _RPS_NAME_\#T
+	    IDM_ABOUTBOX+16*j, _RPS_NAME_#T
       end if
-    \} }
+    }
     __AGENTS = j
 
     invoke InsertMenu,[hMenu],0,MF_BYPOSITION or MF_STRING or MF_DISABLED,IDM_ABOUTBOX+16*(j+1),"AGENTS"
@@ -499,16 +495,14 @@ WM_COMMAND.IDB_SCISSOR:
     retn
 
 entry equ .!.. ; fudge to get the API stuff without code generation
-.end $$
+.end $$ ; doesn't really start at $$
 
 
     align 64
 ___wsprintf rw 1024+2
 
     align 64
-match L,AGENTS { irp T,L \{
-  T BSS
-\} }
+irp T,AGENTS { T BSS }
 
 
 section '.rsrc' resource data readable
